@@ -4,6 +4,8 @@ local PlayerData = {}
 local isLoggedIn = false
 local currentFramework = nil
 local meterModels = {}
+local canRobMeter = true
+
 
 local function InitializeFramework()
     if Config.Framework == 'auto' or Config.Framework == 'qb' then
@@ -199,17 +201,44 @@ local function StartMinigame()
         })
     elseif minigameType == 'lockpick' then
         local pins = Config.Minigame.lockpick[difficulty].pins
-        -- Fix: Replace the non-existent lockpick export with the proper skillCheck function
-        -- Create an array of difficulties based on the number of pins
         local difficulties = {}
         for i=1, pins do
-            table.insert(difficulties, 'medium') -- You can adjust difficulty as needed
-        end
+            table.insert(difficulties, 'medium') 
         success = lib.skillCheck(difficulties, {'w', 'a', 's', 'd'})
     end
     
     return success
 end
+
+
+RegisterNetEvent('gs-meterrobbery:client:cooldownNotify', function(cooldownType, remainingTime)
+    if not Config.Cooldown.notify then return end
+    
+    local message = ''
+    
+    if cooldownType == 'global' then
+        message = _U('global_cooldown')
+    elseif cooldownType == 'player' then
+        message = _U('player_cooldown')
+    elseif cooldownType == 'meter' then
+        message = _U('meter_cooldown')
+    end
+    
+    if remainingTime then
+        message = message .. ' ' .. string.format(_U('cooldown_remaining'), remainingTime)
+    end
+    
+    lib.notify({
+        title = _U('meter_robbery'),
+        description = message,
+        type = 'error'
+    })
+end)
+
+
+RegisterNetEvent('gs-meterrobbery:client:cooldownResult', function(result)
+    canRobMeter = result
+end)
 
 local function ProcessMeterRobbery(entity)
     if not IsEnoughPoliceOnline() then
@@ -231,6 +260,18 @@ local function ProcessMeterRobbery(entity)
     end
     
     local coords = GetEntityCoords(entity)
+    local meterId = tostring(NetworkGetNetworkIdFromEntity(entity))
+    
+
+    TriggerServerEvent('gs-meterrobbery:server:checkCooldown', meterId)
+    
+
+    Wait(100)
+    
+    if not canRobMeter then
+        return 
+        
+    end
     
     PlayRobberyAnimation()
     

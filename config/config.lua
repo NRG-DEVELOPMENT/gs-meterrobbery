@@ -15,6 +15,16 @@ Config.Framework = 'auto'
 -- 'auto' -> Try to detect automatically
 Config.Target = 'auto'
 
+-- Cooldown Configuration
+-- Controls how often players can rob meters
+Config.Cooldown = {
+    enabled = true,         -- Enable/disable cooldown system
+    global = 60,            -- Global cooldown in seconds (all players, all meters)
+    player = 300,           -- Per-player cooldown in seconds (specific player, all meters)
+    meter = 1800,           -- Per-meter cooldown in seconds (all players, specific meter)
+    notify = true           -- Show notification when player tries during cooldown
+}
+
 -- Dispatch System Configuration
 Config.Dispatch = {
     enabled = true,         -- Enable/disable dispatch alerts entirely

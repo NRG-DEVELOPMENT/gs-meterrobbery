@@ -2,6 +2,10 @@ local QBCore = nil
 local ESX = nil
 local currentFramework = nil
 
+local globalCooldown = 0
+local playerCooldowns = {}
+local meterCooldowns = {}
+
 local function InitializeFramework()
     if Config.Framework == 'auto' or Config.Framework == 'qb' then
         if GetResourceState('qb-core') ~= 'missing' then
@@ -27,178 +31,256 @@ local function InitializeFramework()
     return false
 end
 
-local function GetPlayer(source)
+local function GetPlayerIdentifier(source)
     if currentFramework == 'qb' then
-        return QBCore.Functions.GetPlayer(source)
+        local Player = QBCore.Functions.GetPlayer(source)
+        if Player then
+            return Player.PlayerData.citizenid
+        end
     elseif currentFramework == 'esx' then
-        return ESX.GetPlayerFromId(source)
-    end
-    return nil
-end
-
-local function AddMoney(source, amount, type)
-    local player = GetPlayer(source)
-    if not player then return false end
-    
-    if currentFramework == 'qb' then
-        player.Functions.AddMoney(type, amount)
-        return true
-    elseif currentFramework == 'esx' then
-        if type == 'cash' then
-            player.addMoney(amount)
-            return true
-        elseif type == 'bank' then
-            player.addAccountMoney('bank', amount)
-            return true
-        elseif type == 'black_money' then
-            player.addAccountMoney('black_money', amount)
-            return true
+        local xPlayer = ESX.GetPlayerFromId(source)
+        if xPlayer then
+            return xPlayer.identifier
         end
     end
     
-    return false
+    return tostring(source) 
 end
 
-local function AddItem(source, item, amount)
-    local player = GetPlayer(source)
-    if not player then return false end
-    
-    if currentFramework == 'qb' then
-        player.Functions.AddItem(item, amount)
-        TriggerClientEvent('inventory:client:ItemBox', source, QBCore.Shared.Items[item], 'add')
-        return true
-    elseif currentFramework == 'esx' then
-        player.addInventoryItem(item, amount)
-        return true
-    end
-    
-    return false
-end
-
-local function RemoveItem(source, item, amount)
-    local player = GetPlayer(source)
-    if not player then return false end
-    
-    if currentFramework == 'qb' then
-        player.Functions.RemoveItem(item, amount)
-        TriggerClientEvent('inventory:client:ItemBox', source, QBCore.Shared.Items[item], 'remove')
-        return true
-    elseif currentFramework == 'esx' then
-        player.removeInventoryItem(item, amount)
-        return true
-    end
-    
-    return false
-end
-
-local function HasItem(source, item, amount)
-    local player = GetPlayer(source)
-    if not player then return false end
-    
-    if currentFramework == 'qb' then
-        local hasItem = player.Functions.GetItemByName(item)
-        return hasItem and hasItem.amount >= amount
-    elseif currentFramework == 'esx' then
-        local hasItem = player.getInventoryItem(item)
-        return hasItem and hasItem.count >= amount
-    end
-    
-    return false
-end
-
-local function GetItemLabel(item)
-    if currentFramework == 'qb' then
-        return QBCore.Shared.Items[item] and QBCore.Shared.Items[item].label or item
-    elseif currentFramework == 'esx' then
-        local itemData = ESX.GetItems()[item]
-        return itemData and itemData.label or item
-    end
-    
-    return item
-end
-
-local function GenerateRewards(source)
-    local rewards = {
-        money = 0,
-        items = {}
-    }
-    
-    if Config.Rewards.money.enabled then
-        rewards.money = math.random(Config.Rewards.money.minAmount, Config.Rewards.money.maxAmount)
-    end
-    
-    if Config.Rewards.items.enabled then
-        for _, item in pairs(Config.Rewards.items.possible) do
-            local chance = math.random(1, 100)
-            if chance <= item.chance then
-                local amount = math.random(item.min, item.max)
-                table.insert(rewards.items, {
-                    name = item.name,
-                    amount = amount,
-                    label = GetItemLabel(item.name)
-                })
-            end
-        end
-    end
-    
-    return rewards
-end
-
-local function GiveRewards(source, rewards)
-    if rewards.money > 0 then
-        local moneyType = Config.Rewards.money.type
-        if AddMoney(source, rewards.money, moneyType) then
-            TriggerClientEvent('gs-meterrobbery:client:notify', source, 'success', _U('received_money', rewards.money))
-        end
-    end
-    
-    for _, item in pairs(rewards.items) do
-        if AddItem(source, item.name, item.amount) then
-            TriggerClientEvent('gs-meterrobbery:client:notify', source, 'success', _U('received_item', item.amount, item.label))
-        end
-    end
-end
-
-local function RemoveRequiredItems(source, isFailed)
-    if not Config.RequiredItems.enabled then return end
-    
-    for _, item in pairs(Config.RequiredItems.items) do
-        if item.remove then
-            local removeChance = item.chance or 100
-            local chance = math.random(1, 100)
-            
-            if isFailed then
-                removeChance = removeChance + 20
-            end
-            
-            if chance <= removeChance then
-                RemoveItem(source, item.name, item.amount)
-            end
-        end
-    end
-end
-
-local function CountPoliceOnline()
+local function CountPolice()
     local policeCount = 0
     
     if currentFramework == 'qb' then
-        for _, jobName in ipairs(Config.Meters.police.jobs) do
-            for _, player in pairs(QBCore.Functions.GetPlayers()) do
-                local Player = QBCore.Functions.GetPlayer(player)
-                if Player and Player.PlayerData.job.name == jobName and Player.PlayerData.job.onduty then
+        local players = QBCore.Functions.GetQBPlayers()
+        for _, player in pairs(players) do
+            for _, job in pairs(Config.Meters.police.jobs) do
+                if player.PlayerData.job.name == job and player.PlayerData.job.onduty then
                     policeCount = policeCount + 1
                 end
             end
         end
     elseif currentFramework == 'esx' then
-        for _, jobName in ipairs(Config.Meters.police.jobs) do
-            local players = ESX.GetExtendedPlayers('job', jobName)
-            policeCount = policeCount + #players
+        local players = ESX.GetPlayers()
+        for _, playerId in ipairs(players) do
+            local xPlayer = ESX.GetPlayerFromId(playerId)
+            for _, job in pairs(Config.Meters.police.jobs) do
+                if xPlayer.job.name == job then
+                    policeCount = policeCount + 1
+                end
+            end
         end
     end
     
     return policeCount
 end
+
+local function RemoveItems(source, failed)
+    if not Config.RequiredItems.enabled then return end
+    
+    if currentFramework == 'qb' then
+        local Player = QBCore.Functions.GetPlayer(source)
+        if not Player then return end
+        
+        for _, item in pairs(Config.RequiredItems.items) do
+            if item.remove then
+                local shouldRemove = failed or (math.random(1, 100) <= item.chance)
+                if shouldRemove then
+                    Player.Functions.RemoveItem(item.name, item.amount)
+                    TriggerClientEvent('inventory:client:ItemBox', source, QBCore.Shared.Items[item.name], 'remove', item.amount)
+                end
+            end
+        end
+    elseif currentFramework == 'esx' then
+        local xPlayer = ESX.GetPlayerFromId(source)
+        if not xPlayer then return end
+        
+        for _, item in pairs(Config.RequiredItems.items) do
+            if item.remove then
+                local shouldRemove = failed or (math.random(1, 100) <= item.chance)
+                if shouldRemove then
+                    xPlayer.removeInventoryItem(item.name, item.amount)
+                end
+            end
+        end
+    end
+end
+
+local function GiveRewards(source)
+    if currentFramework == 'qb' then
+        local Player = QBCore.Functions.GetPlayer(source)
+        if not Player then return end
+        
+        if Config.Rewards.money.enabled then
+            local amount = math.random(Config.Rewards.money.minAmount, Config.Rewards.money.maxAmount)
+            local moneyType = Config.Rewards.money.type
+            
+            if moneyType == 'cash' then
+                Player.Functions.AddMoney('cash', amount)
+            elseif moneyType == 'bank' then
+                Player.Functions.AddMoney('bank', amount)
+            elseif moneyType == 'black_money' or moneyType == 'crypto' then
+                Player.Functions.AddMoney(moneyType, amount)
+            end
+        end
+        
+        if Config.Rewards.items.enabled then
+            for _, item in pairs(Config.Rewards.items.possible) do
+                if math.random(1, 100) <= item.chance then
+                    local amount = math.random(item.min, item.max)
+                    Player.Functions.AddItem(item.name, amount)
+                    TriggerClientEvent('inventory:client:ItemBox', source, QBCore.Shared.Items[item.name], 'add', amount)
+                end
+            end
+        end
+    elseif currentFramework == 'esx' then
+        local xPlayer = ESX.GetPlayerFromId(source)
+        if not xPlayer then return end
+        
+        if Config.Rewards.money.enabled then
+            local amount = math.random(Config.Rewards.money.minAmount, Config.Rewards.money.maxAmount)
+            local moneyType = Config.Rewards.money.type
+            
+            if moneyType == 'cash' then
+                xPlayer.addMoney(amount)
+            elseif moneyType == 'bank' then
+                xPlayer.addAccountMoney('bank', amount)
+            elseif moneyType == 'black_money' then
+                xPlayer.addAccountMoney('black_money', amount)
+            end
+        end
+        
+        if Config.Rewards.items.enabled then
+            for _, item in pairs(Config.Rewards.items.possible) do
+                if math.random(1, 100) <= item.chance then
+                    local amount = math.random(item.min, item.max)
+                    xPlayer.addInventoryItem(item.name, amount)
+                end
+            end
+        end
+    end
+end
+
+local function CheckCooldowns(source, meterId)
+    if not Config.Cooldown.enabled then return true end
+    
+    local currentTime = os.time()
+    local playerId = GetPlayerIdentifier(source)
+    
+    if globalCooldown > currentTime then
+        local remainingTime = globalCooldown - currentTime
+        if Config.Cooldown.notify then
+            TriggerClientEvent('gs-meterrobbery:client:cooldownNotify', source, 'global', remainingTime)
+        end
+        return false
+    end
+    
+    if playerCooldowns[playerId] and playerCooldowns[playerId] > currentTime then
+        local remainingTime = playerCooldowns[playerId] - currentTime
+        if Config.Cooldown.notify then
+            TriggerClientEvent('gs-meterrobbery:client:cooldownNotify', source, 'player', remainingTime)
+        end
+        return false
+    end
+    
+    if meterCooldowns[meterId] and meterCooldowns[meterId] > currentTime then
+        local remainingTime = meterCooldowns[meterId] - currentTime
+        if Config.Cooldown.notify then
+            TriggerClientEvent('gs-meterrobbery:client:cooldownNotify', source, 'meter', remainingTime)
+        end
+        return false
+    end
+    
+    return true
+end
+
+
+local function SetCooldowns(source, meterId)
+    local currentTime = os.time()
+    local playerId = GetPlayerIdentifier(source)
+    
+
+    globalCooldown = currentTime + Config.Cooldown.global
+    
+    playerCooldowns[playerId] = currentTime + Config.Cooldown.player
+    
+    meterCooldowns[meterId] = currentTime + Config.Cooldown.meter
+    
+    if Config.Debug then
+        print('[gs-meterrobbery] Cooldowns set - Global: ' .. globalCooldown .. ', Player: ' .. playerCooldowns[playerId] .. ', Meter: ' .. meterCooldowns[meterId])
+    end
+end
+
+CreateThread(function()
+    while true do
+        Wait(60000) 
+        local currentTime = os.time()
+        
+        for playerId, cooldownTime in pairs(playerCooldowns) do
+            if cooldownTime < currentTime then
+                playerCooldowns[playerId] = nil
+            end
+        end
+        
+        for meterId, cooldownTime in pairs(meterCooldowns) do
+            if cooldownTime < currentTime then
+                meterCooldowns[meterId] = nil
+            end
+        end
+    end
+end)
+
+RegisterNetEvent('gs-meterrobbery:server:checkPoliceCount', function()
+    local src = source
+    local policeCount = CountPolice()
+    
+    TriggerClientEvent('gs-meterrobbery:client:receivePoliceCount', src, policeCount)
+end)
+
+RegisterNetEvent('gs-meterrobbery:server:removeItems', function(failed)
+    local src = source
+    RemoveItems(src, failed)
+end)
+
+RegisterNetEvent('gs-meterrobbery:server:giveRewards', function()
+    local src = source
+    GiveRewards(src)
+end)
+
+RegisterNetEvent('gs-meterrobbery:server:notifyPolice', function(coords)
+    if not Config.Meters.police.required then return end
+    
+    if currentFramework == 'qb' then
+        local players = QBCore.Functions.GetQBPlayers()
+        for _, player in pairs(players) do
+            for _, job in pairs(Config.Meters.police.jobs) do
+                if player.PlayerData.job.name == job and player.PlayerData.job.onduty then
+                    TriggerClientEvent('gs-meterrobbery:client:policeAlert', player.PlayerData.source, coords)
+                end
+            end
+        end
+    elseif currentFramework == 'esx' then
+        local players = ESX.GetPlayers()
+        for _, playerId in ipairs(players) do
+            local xPlayer = ESX.GetPlayerFromId(playerId)
+            for _, job in pairs(Config.Meters.police.jobs) do
+                if xPlayer.job.name == job then
+                    TriggerClientEvent('gs-meterrobbery:client:policeAlert', playerId, coords)
+                end
+            end
+        end
+    end
+end)
+
+RegisterNetEvent('gs-meterrobbery:server:checkCooldown', function(meterId)
+    local src = source
+    local canRob = CheckCooldowns(src, meterId)
+    
+    TriggerClientEvent('gs-meterrobbery:client:cooldownResult', src, canRob)
+    
+    if canRob then
+        SetCooldowns(src, meterId)
+    end
+end)
 
 CreateThread(function()
     if not InitializeFramework() then return end
@@ -206,94 +288,4 @@ CreateThread(function()
     if Config.Debug then
         print('[gs-meterrobbery] Server initialized with framework: ' .. currentFramework)
     end
-end)
-
-RegisterNetEvent('gs-meterrobbery:server:giveRewards', function()
-    local source = source
-    local rewards = GenerateRewards(source)
-    GiveRewards(source, rewards)
-end)
-
-RegisterNetEvent('gs-meterrobbery:server:checkPoliceCount', function()
-    local source = source
-    local policeCount = CountPoliceOnline()
-    TriggerClientEvent('gs-meterrobbery:client:receivePoliceCount', source, policeCount)
-end)
-
-RegisterNetEvent('gs-meterrobbery:server:removeItems', function(isFailed)
-    local source = source
-    RemoveRequiredItems(source, isFailed)
-end)
-
-RegisterNetEvent('gs-meterrobbery:server:notifyPolice', function(coords)
-    local players = GetPlayers()
-    for _, player in ipairs(players) do
-        local playerSource = tonumber(player)
-        local playerObj = GetPlayer(playerSource)
-        
-        if playerObj then
-            local isPolice = false
-            
-            if currentFramework == 'qb' then
-                isPolice = playerObj.PlayerData.job.name == 'police'
-            elseif currentFramework == 'esx' then
-                isPolice = playerObj.job.name == 'police'
-            end
-            
-            if isPolice then
-                TriggerClientEvent('gs-meterrobbery:client:policeAlert', playerSource, coords)
-            end
-        end
-    end
-end)
-
-RegisterNetEvent('gs-meterrobbery:client:notify', function(type, message)
-    if lib then
-        lib.notify({
-            title = _U('meter_robbery'),
-            description = message,
-            type = type
-        })
-    else
-        if currentFramework == 'qb' then
-            TriggerClientEvent('QBCore:Notify', source, message, type)
-        elseif currentFramework == 'esx' then
-            TriggerClientEvent('esx:showNotification', source, message)
-        end
-    end
-end)
-
-RegisterNetEvent('gs-meterrobbery:client:policeAlert', function(coords)
-    if lib then
-        lib.notify({
-            title = _U('dispatch_title'),
-            description = _U('dispatch_desc'),
-            type = 'inform'
-        })
-    else
-        if currentFramework == 'qb' then
-            TriggerEvent('QBCore:Notify', _U('dispatch_desc'), 'inform')
-        elseif currentFramework == 'esx' then
-            TriggerEvent('esx:showNotification', _U('dispatch_desc'))
-        end
-    end
-    
-    local blip = AddBlipForCoord(coords.x, coords.y, coords.z)
-    SetBlipSprite(blip, 47)
-    SetBlipDisplay(blip, 4)
-    SetBlipScale(blip, 1.0)
-    SetBlipColour(blip, 1)
-    SetBlipAsShortRange(blip, false)
-    BeginTextCommandSetBlipName("STRING")
-    AddTextComponentString(_U('meter_robbery'))
-    EndTextCommandSetBlipName(blip)
-    
-    SetTimeout(60000, function()
-        RemoveBlip(blip)
-    end)
-end)
-
-CreateThread(function()
-    Wait(5000)
-    local resourceName = GetCurrentResourceName()
 end)
