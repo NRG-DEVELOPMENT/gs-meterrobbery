@@ -1,5 +1,3 @@
--- EC Parking Meter Robbery - Config
--- This version adds explanatory comments to every section/option.
 
 Config = {}
 

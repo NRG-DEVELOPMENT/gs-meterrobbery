@@ -2,11 +2,23 @@ local targetInitialized = false
 local meterModels = {}
 
 local function InitializeTarget()
-    while not exports['gs-meterrobbery']:GetMeterModels() do
+    local attempts = 0
+    local maxAttempts = 100
+    
+    while attempts < maxAttempts do
+        local models = exports['gs-meterrobbery']:GetMeterModels()
+        if models and #models > 0 then
+            meterModels = models
+            break
+        end
         Wait(100)
+        attempts = attempts + 1
     end
     
-    meterModels = exports['gs-meterrobbery']:GetMeterModels()
+    if #meterModels == 0 then
+        print('[gs-meterrobbery] Failed to get meter models after ' .. maxAttempts .. ' attempts')
+        return false
+    end
     
     if Config.Target == 'ox' then
         InitializeOxTarget()

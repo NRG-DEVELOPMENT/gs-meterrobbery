@@ -204,6 +204,7 @@ local function StartMinigame()
         local difficulties = {}
         for i=1, pins do
             table.insert(difficulties, 'medium') 
+        end
         success = lib.skillCheck(difficulties, {'w', 'a', 's', 'd'})
     end
     
@@ -335,6 +336,12 @@ local function InitializeMeterModels()
     end
 end
 
+exports('ProcessMeterRobbery', ProcessMeterRobbery)
+
+exports('GetMeterModels', function()
+    return meterModels
+end)
+
 CreateThread(function()
     if not InitializeFramework() then return end
     
@@ -348,10 +355,4 @@ CreateThread(function()
         print('[gs-meterrobbery] Initialized with framework: ' .. currentFramework)
         print('[gs-meterrobbery] Using target system: ' .. Config.Target)
     end
-end)
-
-exports('ProcessMeterRobbery', ProcessMeterRobbery)
-
-exports('GetMeterModels', function()
-    return meterModels
 end)
