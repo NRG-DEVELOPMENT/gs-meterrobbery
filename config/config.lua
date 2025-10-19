@@ -1,13 +1,9 @@
 
+
 Config = {}
 
--- Framework Configuration
--- 'qb'   -> Force QBCore
--- 'esx'  -> Force ESX
--- 'auto' -> Try to detect automatically
 Config.Framework = 'auto'
 
--- Target System Configuration
 -- 'ox'   -> ox_target
 -- 'qb'   -> qb-target
 -- 'auto' -> Try to detect automatically

@@ -145,7 +145,24 @@ local function SendDispatchAlert(coords)
     
     if Config.Dispatch.system == 'ps' then
         if GetResourceState('ps-dispatch') ~= 'missing' then
-            exports['ps-dispatch']:MeterRobbery(coords)
+            local dispatchData = {
+                message = _U('dispatch_desc'),
+                codeName = 'meterrobbery',
+                code = '10-90',
+                icon = 'fas fa-parking',
+                priority = 2,
+                coords = coords,
+                gender = GetPedGender(),
+                street = GetStreetAndZone(coords),
+                heading = GetEntityHeading(PlayerPedId()),
+                vehicle = nil,
+                plate = nil,
+                color = nil,
+                doors = nil,
+                name = nil,
+                weapon = nil
+            }
+            TriggerServerEvent('ps-dispatch:server:notify', dispatchData)
         end
     elseif Config.Dispatch.system == 'cd' then
         if GetResourceState('cd_dispatch') ~= 'missing' then
@@ -164,6 +181,28 @@ local function SendDispatchAlert(coords)
         end
     elseif Config.Dispatch.system == 'custom' then
         TriggerServerEvent('gs-meterrobbery:server:notifyPolice', coords)
+    end
+end
+
+local function GetPedGender()
+    local ped = PlayerPedId()
+    local gender = 'male'
+    if GetEntityModel(ped) == GetHashKey('mp_f_freemode_01') then
+        gender = 'female'
+    end
+    return gender
+end
+
+local function GetStreetAndZone(coords)
+    local streetHash, crossingHash = GetStreetNameAtCoord(coords.x, coords.y, coords.z)
+    local street = GetStreetNameFromHashKey(streetHash)
+    local crossing = GetStreetNameFromHashKey(crossingHash)
+    local zone = GetLabelText(GetNameOfZone(coords.x, coords.y, coords.z))
+    
+    if crossing and crossing ~= '' then
+        return street .. ' / ' .. crossing .. ', ' .. zone
+    else
+        return street .. ', ' .. zone
     end
 end
 
