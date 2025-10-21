@@ -2,6 +2,8 @@ local targetInitialized = false
 local meterModels = {}
 
 local function InitializeTarget()
+    Wait(1000)
+    
     local attempts = 0
     local maxAttempts = 100
     
@@ -103,7 +105,7 @@ function IsEnoughPoliceOnline()
 end
 
 CreateThread(function()
-    Wait(1000)
+    Wait(2000)  
     
     targetInitialized = InitializeTarget()
     

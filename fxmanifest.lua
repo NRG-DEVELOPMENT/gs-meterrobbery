@@ -4,7 +4,7 @@ game 'gta5'
 name 'gs-meterrobbery'
 author 'NRG Development'
 description 'Parking Meter Robbery Script for FiveM - Compatible with QBCore and ESX'
-version '1.1.2'
+version '1.1.4'
 
 shared_scripts {
     '@ox_lib/init.lua',
@@ -15,6 +15,11 @@ shared_scripts {
 client_scripts {
     'client/main.lua',
     'client/target.lua'
+}
+
+exports {
+    'ProcessMeterRobbery',
+    'GetMeterModels'
 }
 
 server_scripts {

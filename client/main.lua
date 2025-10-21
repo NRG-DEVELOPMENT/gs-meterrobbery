@@ -375,6 +375,8 @@ local function InitializeMeterModels()
     end
 end
 
+InitializeMeterModels()
+
 exports('ProcessMeterRobbery', ProcessMeterRobbery)
 
 exports('GetMeterModels', function()
@@ -387,8 +389,6 @@ CreateThread(function()
     InitializePlayerData()
     
     if not InitializeTarget() then return end
-    
-    InitializeMeterModels()
     
     if Config.Debug then
         print('[gs-meterrobbery] Initialized with framework: ' .. currentFramework)
