@@ -4,7 +4,7 @@ game 'gta5'
 name 'gs-meterrobbery'
 author 'NRG Development'
 description 'Parking Meter Robbery Script for FiveM - Compatible with QBCore and ESX'
-version '1.1.4'
+version '1.1.5'
 
 shared_scripts {
     '@ox_lib/init.lua',

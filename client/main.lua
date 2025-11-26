@@ -5,6 +5,8 @@ local isLoggedIn = false
 local currentFramework = nil
 local meterModels = {}
 local canRobMeter = true
+local policeCount = 0
+local lastDispatchTime = 0  
 
 
 local function InitializeFramework()
@@ -82,7 +84,9 @@ local function InitializePlayerData()
         
         RegisterNetEvent('esx:setJob', function(job)
             ESX.PlayerData.job = job
-            PlayerData.job = job
+            if PlayerData then
+                PlayerData.job = job
+            end
         end)
     end
 end
@@ -101,10 +105,11 @@ local function HasRequiredItems()
             end
         end
     elseif currentFramework == 'esx' then
+        local inventory = (PlayerData and PlayerData.inventory) or {}
         for _, item in pairs(Config.RequiredItems.items) do
             local hasItem = false
-            for _, playerItem in pairs(PlayerData.inventory) do
-                if playerItem.name == item.name and playerItem.count >= item.amount then
+            for _, playerItem in pairs(inventory) do
+                if playerItem.name == item.name and (playerItem.count or playerItem.quantity or 0) >= item.amount then
                     hasItem = true
                     break
                 end
@@ -119,10 +124,9 @@ local function HasRequiredItems()
     return hasItems
 end
 
-local policeCount = 0
 
 RegisterNetEvent('gs-meterrobbery:client:receivePoliceCount', function(count)
-    policeCount = count
+    policeCount = count or 0
 end)
 
 local function IsEnoughPoliceOnline()
@@ -133,6 +137,28 @@ local function IsEnoughPoliceOnline()
     Wait(100)
     
     return policeCount >= Config.Meters.police.minimum
+end
+
+local function GetPedGender()
+    local ped = PlayerPedId()
+    local gender = 'male'
+    if GetEntityModel(ped) == GetHashKey('mp_f_freemode_01') then
+        gender = 'female'
+    end
+    return gender
+end
+
+local function GetStreetAndZone(coords)
+    local streetHash, crossingHash = GetStreetNameAtCoord(coords.x, coords.y, coords.z)
+    local street = GetStreetNameFromHashKey(streetHash)
+    local crossing = GetStreetNameFromHashKey(crossingHash)
+    local zone = GetLabelText(GetNameOfZone(coords.x, coords.y, coords.z))
+    
+    if crossing and crossing ~= '' then
+        return street .. ' / ' .. crossing .. ', ' .. zone
+    else
+        return street .. ', ' .. zone
+    end
 end
 
 local function SendDispatchAlert(coords)
@@ -184,28 +210,6 @@ local function SendDispatchAlert(coords)
     end
 end
 
-local function GetPedGender()
-    local ped = PlayerPedId()
-    local gender = 'male'
-    if GetEntityModel(ped) == GetHashKey('mp_f_freemode_01') then
-        gender = 'female'
-    end
-    return gender
-end
-
-local function GetStreetAndZone(coords)
-    local streetHash, crossingHash = GetStreetNameAtCoord(coords.x, coords.y, coords.z)
-    local street = GetStreetNameFromHashKey(streetHash)
-    local crossing = GetStreetNameFromHashKey(crossingHash)
-    local zone = GetLabelText(GetNameOfZone(coords.x, coords.y, coords.z))
-    
-    if crossing and crossing ~= '' then
-        return street .. ' / ' .. crossing .. ', ' .. zone
-    else
-        return street .. ', ' .. zone
-    end
-end
-
 local function PlayRobberyAnimation()
     local ped = PlayerPedId()
     local animDict = Config.Meters.animation.dict
@@ -231,7 +235,6 @@ local function StartMinigame()
     local difficulty = Config.Minigame.difficulty
     
     if minigameType == 'circle' then
-        local circles = Config.Minigame.circle[difficulty].circles
         success = lib.skillCheck({'easy', 'medium', 'medium'}, {'w', 'a', 's', 'd'})
     elseif minigameType == 'maze' then
         local size = Config.Minigame.maze[difficulty].size
@@ -241,8 +244,8 @@ local function StartMinigame()
     elseif minigameType == 'lockpick' then
         local pins = Config.Minigame.lockpick[difficulty].pins
         local difficulties = {}
-        for i=1, pins do
-            table.insert(difficulties, 'medium') 
+        for i = 1, pins do
+            table.insert(difficulties, 'medium')
         end
         success = lib.skillCheck(difficulties, {'w', 'a', 's', 'd'})
     end
@@ -277,7 +280,7 @@ end)
 
 
 RegisterNetEvent('gs-meterrobbery:client:cooldownResult', function(result)
-    canRobMeter = result
+    canRobMeter = result and true or false
 end)
 
 local function ProcessMeterRobbery(entity)
@@ -301,16 +304,13 @@ local function ProcessMeterRobbery(entity)
     
     local coords = GetEntityCoords(entity)
     local meterId = tostring(NetworkGetNetworkIdFromEntity(entity))
-    
 
     TriggerServerEvent('gs-meterrobbery:server:checkCooldown', meterId)
-    
 
     Wait(100)
     
     if not canRobMeter then
-        return 
-        
+        return
     end
     
     PlayRobberyAnimation()
@@ -333,9 +333,7 @@ local function ProcessMeterRobbery(entity)
         })
         
         SendDispatchAlert(coords)
-        
         TriggerServerEvent('gs-meterrobbery:server:removeItems', true)
-        
         return
     end
     
@@ -350,12 +348,11 @@ local function ProcessMeterRobbery(entity)
         })
         
         SendDispatchAlert(coords)
-        
         TriggerServerEvent('gs-meterrobbery:server:removeItems', false)
-        
         TriggerServerEvent('gs-meterrobbery:server:giveRewards')
-        
-        SetEntityRotation(entity, GetEntityRotation(entity) + vector3(0, 45.0, 0), 2, true)
+
+        local rot = GetEntityRotation(entity)
+        SetEntityRotation(entity, vector3(rot.x, rot.y + 45.0, rot.z), 2, true)
     else
         lib.notify({
             title = _U('meter_robbery'),
@@ -364,7 +361,6 @@ local function ProcessMeterRobbery(entity)
         })
         
         SendDispatchAlert(coords)
-        
         TriggerServerEvent('gs-meterrobbery:server:removeItems', true)
     end
 end
@@ -391,7 +387,7 @@ CreateThread(function()
     if not InitializeTarget() then return end
     
     if Config.Debug then
-        print('[gs-meterrobbery] Initialized with framework: ' .. currentFramework)
-        print('[gs-meterrobbery] Using target system: ' .. Config.Target)
+        print('[gs-meterrobbery] Initialized with framework: ' .. tostring(currentFramework))
+        print('[gs-meterrobbery] Using target system: ' .. tostring(Config.Target))
     end
 end)
